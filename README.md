@@ -262,6 +262,76 @@ Whole suite runs in ~2 seconds.
 
 ---
 
+## Deployment (Render + Hugging Face Hub)
+
+The API is designed to deploy as a free-tier Render web service. The trained
+model artifact lives on Hugging Face Hub and is downloaded at startup, so the
+repo itself stays small.
+
+### One-time setup
+
+**1. Upload the trained pickle to Hugging Face Hub**
+
+```bash
+pip install huggingface_hub                   # already in requirements.txt
+huggingface-cli login                         # paste a write token
+huggingface-cli repo create fraud-detection-model --type=model
+huggingface-cli upload \
+  YOUR_HF_USERNAME/fraud-detection-model \
+  models/fraud_xgb.pkl \
+  fraud_xgb.pkl
+```
+
+Public repos need no token at download time. Private repos require
+`HF_TOKEN` to be set in Render.
+
+**2. Connect the GitHub repo to Render**
+
+In the Render dashboard:
+
+1. **New +** → **Blueprint** → select this repo → Render reads `render.yaml`.
+2. Set the secret env var the blueprint marks as `sync: false`:
+   - `HF_MODEL_REPO_ID` = `YOUR_HF_USERNAME/fraud-detection-model`
+   - (Optional) `HF_TOKEN` if the repo is private.
+3. Click **Create Blueprint**. First build takes ~5–8 minutes (pip install).
+
+### What the blueprint provisions
+
+```
+service:  fraud-detection-api
+plan:     free  (512 MB RAM, sleeps after 15 min idle)
+build:    pip install -r requirements.txt
+start:    uvicorn src.api.main:app --host 0.0.0.0 --port $PORT --workers 1
+health:   GET /health  (Render polls this)
+```
+
+At cold start the API:
+1. Boots uvicorn.
+2. Inside the FastAPI lifespan: checks for `models/fraud_xgb.pkl` locally.
+3. Not found → reads `HF_MODEL_REPO_ID` and pulls the artifact (~few seconds for a small pickle).
+4. Loads the pipeline + builds the SHAP explainer.
+5. Reports `model_loaded: true` on `/health` and starts serving `/predict`.
+
+### Operational notes
+
+- **Cold starts**: free tier sleeps after 15 minutes idle. First request after sleep
+  is ~30–60 seconds (boot + download + load). Subsequent requests are fast.
+- **One worker**: the start command pins `--workers 1` because each worker keeps a
+  full copy of the model + SHAP explainer in memory. Two workers won't fit in 512 MB.
+- **No training in prod**: `MLFLOW_TRACKING_URI` is intentionally empty in
+  `render.yaml`. Training runs locally; only inference runs on Render.
+- **Updating the model**: re-train locally → re-upload to HF Hub → Render's next
+  cold start picks up the new artifact. No re-deploy needed unless code changes.
+
+### Tuning thresholds in production
+
+`DECISION_THRESHOLD`, `RISK_MEDIUM_THRESHOLD`, and `RISK_HIGH_THRESHOLD` are
+all env vars on the Render service. Adjust them in the dashboard and click
+"Save and deploy" — no code change required. The evaluation report's
+F1-optimal threshold of ~0.25 is a sensible production starting point.
+
+---
+
 ## Project layout
 
 ```
@@ -287,6 +357,7 @@ fraud-detection/
 ├── models/                     # fraud_xgb.pkl + plots (gitignored)
 ├── mlruns/                     # MLflow run store (gitignored)
 ├── .env.example
+├── render.yaml                 # Render Blueprint for deployment
 ├── requirements.txt
 └── README.md
 ```
@@ -316,8 +387,8 @@ fraud-detection/
 - [x] Evaluation + SHAP explanations
 - [x] FastAPI service (`/predict`, `/health`, `/docs`)
 - [x] API test suite
-- [x] README polish (this file)
-- [ ] **Render deployment** ← next
+- [x] README polish
+- [x] Render deployment config (`render.yaml` + HF Hub artifact fetch)
 
 ---
 

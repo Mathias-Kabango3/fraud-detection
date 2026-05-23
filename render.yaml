@@ -1,0 +1,58 @@
+# Render Blueprint for the fraud-detection API.
+#
+# Deploy by connecting this repo in the Render dashboard and selecting
+# "New +" -> "Blueprint". Render will read this file and provision the service.
+#
+# Env vars marked `sync: false` are NOT committed here — set them in the
+# Render dashboard so secrets aren't exposed in git.
+services:
+  - type: web
+    name: fraud-detection-api
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT --workers 1
+
+    healthCheckPath: /health
+
+    envVars:
+      # Pin the interpreter. PYTHON_VERSION is the modern env var; runtime.txt
+      # at the repo root is a Heroku-style fallback Render also reads — having
+      # both prevents silent fallback to "latest" (which is Python 3.14+ as of
+      # late 2025 and has no pandas wheels yet).
+      - key: PYTHON_VERSION
+        value: 3.11.10
+
+      # Model is downloaded to the repo's models/ dir at startup.
+      - key: MODEL_DIR
+        value: models
+      - key: MODEL_FILENAME
+        value: fraud_xgb.pkl
+      - key: MODEL_VERSION
+        value: "0.1.0"
+
+      # Hugging Face Hub artifact location. Set HF_MODEL_REPO_ID in the
+      # dashboard (e.g. "your-hf-username/fraud-detection-model").
+      - key: HF_MODEL_REPO_ID
+        sync: false
+      - key: HF_MODEL_FILENAME
+        value: fraud_xgb.pkl
+
+      # API tuning. Decision threshold = hard FRAUD/NOT_FRAUD label cutoff;
+      # the evaluation report suggested ~0.25 as F1-optimal — adjust here.
+      - key: API_LOG_LEVEL
+        value: info
+      - key: DECISION_THRESHOLD
+        value: "0.5"
+      - key: RISK_MEDIUM_THRESHOLD
+        value: "0.3"
+      - key: RISK_HIGH_THRESHOLD
+        value: "0.7"
+
+      # Disable MLflow logging at runtime — the API doesn't train.
+      - key: MLFLOW_TRACKING_URI
+        value: ""

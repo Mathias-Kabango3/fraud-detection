@@ -10,6 +10,7 @@ or batch jobs without HTTP overhead.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -80,12 +81,22 @@ class FraudPredictor:
         return self._pipeline is not None and self._explainer is not None
 
     def load(self) -> None:
-        """Read the pickled pipeline from disk and build the SHAP explainer."""
+        """Read the pickled pipeline from disk and build the SHAP explainer.
+
+        If the local model file is missing and ``HF_MODEL_REPO_ID`` is set, the
+        artifact is first fetched from Hugging Face Hub. This lets local dev
+        use a trained-locally pickle while Render (and other ephemeral hosts)
+        pulls a versioned artifact on cold start.
+        """
+        if not self.model_path.exists():
+            self._maybe_download_from_hf_hub()
         if not self.model_path.exists():
             raise FileNotFoundError(
                 f"Model file not found at {self.model_path}. "
-                f"Run `python -m src.model.train` to create it."
+                f"Either train locally (`python -m src.model.train`) "
+                f"or set HF_MODEL_REPO_ID to download from Hugging Face Hub."
             )
+
         log.info("Loading model from %s", self.model_path)
         self._pipeline = joblib.load(self.model_path)
         log.info("Building SHAP explainer...")
@@ -93,6 +104,37 @@ class FraudPredictor:
         self._expected_input_columns = self._discover_expected_input_columns()
         log.info("Model loaded (version=%s, decision_threshold=%.2f, expected_input_columns=%d)",
                  self.model_version, self.decision_threshold, len(self._expected_input_columns))
+
+    def _maybe_download_from_hf_hub(self) -> None:
+        """If ``HF_MODEL_REPO_ID`` is set, download the artifact to ``model_path``.
+
+        No-op when the env var isn't set, so local development is unaffected.
+        Failures here are logged; the caller's ``FileNotFoundError`` check then
+        produces the final clean error message.
+        """
+        repo_id = os.getenv("HF_MODEL_REPO_ID")
+        if not repo_id:
+            return
+
+        filename = os.getenv("HF_MODEL_FILENAME", self.model_path.name)
+        log.info("Downloading %s from Hugging Face Hub (%s)...", filename, repo_id)
+        try:
+            from huggingface_hub import hf_hub_download
+
+            self.model_path.parent.mkdir(parents=True, exist_ok=True)
+            downloaded = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                local_dir=str(self.model_path.parent),
+                token=os.getenv("HF_TOKEN"),  # only needed for private repos
+            )
+            # hf_hub_download returns the actual on-disk path; align with model_path.
+            downloaded_path = Path(downloaded)
+            if downloaded_path != self.model_path:
+                downloaded_path.replace(self.model_path)
+            log.info("Downloaded model to %s", self.model_path)
+        except Exception:  # noqa: BLE001
+            log.exception("Failed to download model from Hugging Face Hub")
 
     def _discover_expected_input_columns(self) -> list[str]:
         """Recover the input-time column list from the fitted ColumnTransformer.

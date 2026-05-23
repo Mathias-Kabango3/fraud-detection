@@ -24,6 +24,9 @@ python-dotenv==1.0.1
 # Experiment tracking
 mlflow==2.16.2
 
+# Model artifact transport (Render deployment downloads from HF Hub)
+huggingface_hub==0.25.2
+
 # Notebooks / EDA
 jupyter==1.1.1
 matplotlib==3.9.2
