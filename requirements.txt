@@ -1,0 +1,34 @@
+# Core data stack
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.5.1
+
+# Modeling
+xgboost==2.1.1
+imbalanced-learn==0.12.3
+joblib==1.4.2
+
+# Explainability
+# numba/llvmlite pinned to versions with prebuilt macOS x86_64 wheels
+# (newer numba 0.65 pulls llvmlite 0.47 which is source-only on this platform).
+numba==0.60.0
+llvmlite==0.43.0
+shap==0.46.0
+
+# API
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+python-dotenv==1.0.1
+
+# Experiment tracking
+mlflow==2.16.2
+
+# Notebooks / EDA
+jupyter==1.1.1
+matplotlib==3.9.2
+seaborn==0.13.2
+
+# Testing
+pytest==8.3.3
+httpx==0.27.2
