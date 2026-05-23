@@ -11,7 +11,7 @@
 ![Tests](https://img.shields.io/badge/tests-12%20passing-brightgreen)
 
 ---
-![API](https://fraud-detection-api-qos3.onrender.com/)
+<https://fraud-detection-api-qos3.onrender.com/>
 
 ## Why this project
 
