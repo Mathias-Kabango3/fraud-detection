@@ -119,6 +119,7 @@ class EngineeredFeatures(BaseEstimator, TransformerMixin):
     """
 
     def fit(self, X: pd.DataFrame, y: pd.Series | None = None) -> "EngineeredFeatures":
+        del X, y  # stateless; signature kept for sklearn contract
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
@@ -156,6 +157,7 @@ class HighMissingColumnDropper(BaseEstimator, TransformerMixin):
         self.protect = set(protect)
 
     def fit(self, X: pd.DataFrame, y: pd.Series | None = None) -> "HighMissingColumnDropper":
+        del y  # sklearn contract; unused here
         missing_pct = X.isna().mean()
         self.columns_to_drop_: list[str] = [
             col for col, pct in missing_pct.items()
@@ -190,6 +192,7 @@ class AmountPerGroupRatio(BaseEstimator, TransformerMixin):
         self.output_col = output_col
 
     def fit(self, X: pd.DataFrame, y: pd.Series | None = None) -> "AmountPerGroupRatio":
+        del y  # sklearn contract; unused here
         means = X.groupby(self.group_col)[self.amount_col].mean()
         self.group_means_: dict = means.to_dict()
         self.global_mean_: float = float(X[self.amount_col].mean())
@@ -214,6 +217,7 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
         self.exclude = set(exclude)
 
     def fit(self, X: pd.DataFrame, y: pd.Series | None = None) -> "FrequencyEncoder":
+        del y  # sklearn contract; unused here
         self.columns_: list[str] = [
             col for col in X.columns
             if X[col].dtype == "object" and col not in self.exclude
@@ -363,8 +367,10 @@ if __name__ == "__main__":
     log.info("Fitting preprocessor...")
     t0 = _time.time()
     X_train_t = preprocessor.fit_transform(X_train, y_train)
+    assert isinstance(X_train_t, pd.DataFrame), "Expected DataFrame output from set_output('pandas')"
     log.info("Fit+transform train: %.1fs, output shape=%s", _time.time() - t0, X_train_t.shape)
     X_val_t = preprocessor.transform(X_val)
+    assert isinstance(X_val_t, pd.DataFrame)
     log.info("Transform val: output shape=%s", X_val_t.shape)
 
     nans = int(X_train_t.isna().sum().sum())
